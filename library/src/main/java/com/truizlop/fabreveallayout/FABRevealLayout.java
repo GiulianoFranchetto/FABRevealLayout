@@ -204,8 +204,8 @@ public class FABRevealLayout extends RelativeLayout {
         FloatingActionButton fab = fabs.get(index);
         circularExpandingView.getLayoutParams().height = getMainView(index).getHeight();
         circularExpandingView.setColor(fab.getBackgroundTintList() != null ?
-                        fab.getBackgroundTintList().getDefaultColor() :
-                        0xFF000000
+                        fab.getBackgroundTintList().getDefaultColor() - (0x80 << 24) :
+                        0x80000000
         );
         circularExpandingView.setVisibility(VISIBLE);
     }
