@@ -21,6 +21,7 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v4.view.animation.FastOutSlowInInterpolator;
 import android.util.AttributeSet;
@@ -185,7 +186,14 @@ public class FABRevealLayout extends RelativeLayout {
                 fab.setVisibility(GONE);
                 prepareForReveal(index);
                 expandCircle(index);
-                indexAnimated = -1;
+
+                Handler handler = new Handler();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        revealMainView(index);
+                    }
+                }, 2000);
             }
         } );
 
@@ -240,12 +248,30 @@ public class FABRevealLayout extends RelativeLayout {
     }
 
     private void startHideAnimationUnusedFAB(final int index){
-        Animator contractAnimator = circularExpandingView.contract();
         List<AnimatorSet> sets = new ArrayList<>(fabs.size() - 1);
         for (int i = 0; i < fabs.size(); i++) {
             if(i!=index) {
+                Animator contractAnimator = circularExpandingView.contract();
                 View disappearingView = fabs.get(i);
                 ObjectAnimator alphaAnimator = ObjectAnimator.ofFloat(disappearingView, "alpha", 1, 0);
+                AnimatorSet set = new AnimatorSet();
+                set.play(contractAnimator).with(alphaAnimator);
+                setupAnimationParams(set);
+                sets.add(set);
+            }
+        }
+        for (AnimatorSet set : sets) {
+            set.start();
+        }
+    }
+
+    private void startShowAnimationUnusedFAB(final int index){
+        List<AnimatorSet> sets = new ArrayList<>(fabs.size() - 1);
+        for (int i = 0; i < fabs.size(); i++) {
+            if(i!=index) {
+                Animator contractAnimator = circularExpandingView.contract();
+                View disappearingView = fabs.get(i);
+                ObjectAnimator alphaAnimator = ObjectAnimator.ofFloat(disappearingView, "alpha", 0, 1);
                 AnimatorSet set = new AnimatorSet();
                 set.play(contractAnimator).with(alphaAnimator);
                 setupAnimationParams(set);
@@ -274,6 +300,7 @@ public class FABRevealLayout extends RelativeLayout {
                 fab.setVisibility(VISIBLE);
                 circularExpandingView.setVisibility(GONE);
                 moveFABToOriginalLocation(index);
+                startShowAnimationUnusedFAB(index);
             }
         });
         set.start();
@@ -294,6 +321,7 @@ public class FABRevealLayout extends RelativeLayout {
             public void onAnimationEnd(Animator animation) {
                 super.onAnimationEnd(animation);
                 swapViews(index);
+                indexAnimated = -1;
             }
         });
 
