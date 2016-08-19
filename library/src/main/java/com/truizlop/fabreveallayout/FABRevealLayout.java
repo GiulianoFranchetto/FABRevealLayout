@@ -186,14 +186,6 @@ public class FABRevealLayout extends RelativeLayout {
                 fab.setVisibility(GONE);
                 prepareForReveal(index);
                 expandCircle(index);
-
-                Handler handler = new Handler();
-                handler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        revealMainView(index);
-                    }
-                }, 2000);
             }
         } );
 
