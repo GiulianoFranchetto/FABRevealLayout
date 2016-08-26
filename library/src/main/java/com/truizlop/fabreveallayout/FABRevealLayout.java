@@ -20,14 +20,17 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.os.Build;
-import android.os.Handler;
+import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.v4.view.animation.FastOutSlowInInterpolator;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.animation.Interpolator;
 import android.widget.RelativeLayout;
 
@@ -36,7 +39,9 @@ import java.util.List;
 
 public class FABRevealLayout extends RelativeLayout {
 
-    private static final int FAB_SIZE = 48;
+    private int fabSizePx;
+    private float fabMaxSize = 48;
+    private int fabOrientation = 0; /* 0 = vertical, 1 = horizontal */
     private static final int ANIMATION_DURATION = 500;
     private final Interpolator INTERPOLATOR = new FastOutSlowInInterpolator();
 
@@ -49,50 +54,107 @@ public class FABRevealLayout extends RelativeLayout {
 
     public FABRevealLayout(Context context) {
         this(context, null);
+        childViews = new ArrayList<>();
         fabIndex = 0;
         fabs = new ArrayList<>();
+        setGlobalListener();
     }
 
     public FABRevealLayout(Context context, AttributeSet attrs) {
         this(context, attrs, 0);
+        TypedArray a = context.getTheme().obtainStyledAttributes(
+                attrs,
+                R.styleable.FABRevealLayout,
+                0, 0);
+
+        try {
+            fabMaxSize = a.getDimension(R.styleable.FABRevealLayout_fabMaxSize, 24);
+            fabOrientation = a.getInt(R.styleable.FABRevealLayout_faborientation, 0);
+        } finally {
+            a.recycle();
+        }
+        setGlobalListener();
+        childViews = new ArrayList<>();
         fabIndex = 0;
         fabs = new ArrayList<>();
     }
 
     public FABRevealLayout(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
+        TypedArray a = context.getTheme().obtainStyledAttributes(
+                attrs,
+                R.styleable.FABRevealLayout,
+                0, 0);
+
+        try {
+            fabMaxSize = a.getDimension(R.styleable.FABRevealLayout_fabMaxSize, 24);
+            fabOrientation = a.getInteger(R.styleable.FABRevealLayout_faborientation, 0);
+        } finally {
+            a.recycle();
+        }
+        setGlobalListener();
         childViews = new ArrayList<>();
         fabIndex = 0;
         fabs = new ArrayList<>();
+    }
+
+    private void setGlobalListener() {
+        final RelativeLayout me = this;
+        final ViewTreeObserver vto = this.getViewTreeObserver();
+        vto.addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                    me.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                }
+                setupInitialState();
+            }
+        });
+    }
+
+    private void calculateFabOptimalSize() {
+        if (fabOrientation == 0) {
+            int heightPx = getMeasuredHeight();
+            int padding = dipsToPixels(16f);
+            fabSizePx = Math.min(dipsToPixels(fabMaxSize), (heightPx - fabs.size() * padding) / fabs.size());
+            Log.e("BEST", "Total height: " + heightPx +
+                    ", max height: " + dipsToPixels(fabMaxSize) +
+                    ", optimal : " + (heightPx - fabs.size() * padding) / fabs.size() +
+                    ", chosen : " + fabSizePx + " px");
+        } else {
+            int widthPx = getMeasuredWidth();
+            int padding = dipsToPixels(16f);
+            fabSizePx = Math.min(dipsToPixels(fabMaxSize), (widthPx - fabs.size() * padding) / fabs.size());
+            Log.e("BEST", "Total height: " + widthPx +
+                    ", max height: " + dipsToPixels(fabMaxSize) +
+                    ", optimal : " + (widthPx - fabs.size() * padding) / fabs.size() +
+                    ", chosen : " + fabSizePx + " px");
+        }
     }
 
     @Override
     public void addView(View child, int index, ViewGroup.LayoutParams params) {
         setupView(child);
         super.addView(child, index, params);
-
-        if(areAllComponentsReady()){
-            setupInitialState();
-        }
     }
 
     private void setupView(View child) {
-        if(child instanceof FloatingActionButton){
+        if (child instanceof FloatingActionButton) {
             setupFAB(child);
-        }else if(!(child instanceof CircularExpandingView)){
+        } else if (!(child instanceof CircularExpandingView)) {
             setupChildView(child);
         }
     }
 
-    private void setupFAB(View view){
+    private void setupFAB(View view) {
         view.setTag(fabIndex);
         fabIndex++;
         view.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
-                if(indexAnimated == -1) {
-                    indexAnimated = (int)v.getTag();
-                    revealSecondaryView((int)v.getTag());
+                if (indexAnimated == -1) {
+                    indexAnimated = (int) v.getTag();
+                    revealSecondaryView((int) v.getTag());
                     startHideAnimationUnusedFAB(indexAnimated);
                 }
             }
@@ -100,67 +162,74 @@ public class FABRevealLayout extends RelativeLayout {
         fabs.add((FloatingActionButton) view);
     }
 
-    private void setupChildView(View view){
+    private void setupChildView(View view) {
         childViews.add(view);
-        if(childViews.size() == 1){
-            addCircularRevealView();
-        }
     }
 
     private void addCircularRevealView() {
         circularExpandingView = new CircularExpandingView(getContext());
         LayoutParams params = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
-        params.topMargin = dipsToPixels(FAB_SIZE);
+        params.topMargin = fabSizePx;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            circularExpandingView.setZ(-1);
+        }
         circularExpandingView.setVisibility(View.GONE);
         addView(circularExpandingView, params);
     }
 
-    private boolean areAllComponentsReady(){
-        return fabs != null && childViews.size() == fabs.size()*2;
-    }
-
-    private void setupInitialState(){
+    private void setupInitialState() {
+        calculateFabOptimalSize();
         setupFABPosition();
         setupChildViewsPosition();
+        addCircularRevealView();
     }
 
-    private void setupFABPosition(){
+    private void setupFABPosition() {
         for (int i = 0; i < fabs.size(); i++) {
             FloatingActionButton fab = fabs.get(i);
             RelativeLayout.LayoutParams params = (RelativeLayout.LayoutParams) fab.getLayoutParams();
             params.addRule(RelativeLayout.ALIGN_PARENT_TOP, RelativeLayout.TRUE);
             params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT, RelativeLayout.TRUE);
-            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            params.height = fabSizePx;
+            params.width = fabSizePx;
+
+            if (fabOrientation == 0) {
+                    /* Vertical */
                 params.rightMargin = dipsToPixels(16);
-                params.topMargin = dipsToPixels(20 + (FAB_SIZE + 16) * (int)fab.getTag());
+                params.topMargin = dipsToPixels(20) + fabSizePx*i + dipsToPixels(8) * i;
+            } else {
+                    /* Horizontal */
+                params.rightMargin = dipsToPixels(20) + fabSizePx*i + dipsToPixels(8) * i;
+//                params.topMargin = fabSizePx / 2;
             }
+
             fab.bringToFront();
         }
 
     }
 
-    private void setupChildViewsPosition(){
-        for(int i = 0; i < childViews.size(); i++){
+    private void setupChildViewsPosition() {
+        for (int i = 0; i < childViews.size(); i++) {
             RelativeLayout.LayoutParams params = (RelativeLayout.LayoutParams) childViews.get(i).getLayoutParams();
-            params.topMargin = dipsToPixels(FAB_SIZE);
+            params.topMargin = fabSizePx;
         }
         for (int i = 0; i < fabs.size(); i++) {
             getSecondaryView(i).setVisibility(GONE);
         }
     }
 
-    private boolean isShowingMainView(int index){
+    private boolean isShowingMainView(int index) {
         return getMainView(index).getVisibility() == VISIBLE;
     }
 
-    public void revealMainView(int index){
-        if(!isShowingMainView(index)){
+    public void revealMainView(int index) {
+        if (!isShowingMainView(index)) {
             startHideAnimation(index);
         }
     }
 
-    public void revealSecondaryView(int index){
-        if(isShowingMainView(index)){
+    public void revealSecondaryView(int index) {
+        if (isShowingMainView(index)) {
             startRevealAnimation(index);
         }
     }
@@ -169,7 +238,7 @@ public class FABRevealLayout extends RelativeLayout {
         this.onRevealChangeListener = onRevealChangeListener;
     }
 
-    private void startRevealAnimation(final int index){
+    private void startRevealAnimation(final int index) {
         View disappearingView = getMainView(index);
 
         ObjectAnimator fabAnimator = getFABAnimator(index);
@@ -187,7 +256,7 @@ public class FABRevealLayout extends RelativeLayout {
                 prepareForReveal(index);
                 expandCircle(index);
             }
-        } );
+        });
 
         set.start();
     }
@@ -196,8 +265,8 @@ public class FABRevealLayout extends RelativeLayout {
         FloatingActionButton fab = fabs.get(index);
         circularExpandingView.getLayoutParams().height = getMainView(index).getHeight();
         circularExpandingView.setColor(fab.getBackgroundTintList() != null ?
-                        fab.getBackgroundTintList().getDefaultColor() - (0x80 << 24) :
-                        0x80000000
+                fab.getBackgroundTintList().getDefaultColor() - (0x80 << 24) :
+                0x80000000
         );
         circularExpandingView.setVisibility(VISIBLE);
     }
@@ -215,20 +284,21 @@ public class FABRevealLayout extends RelativeLayout {
         float toX = view.getWidth() / 2 - fab.getWidth() / 2 + view.getLeft();
         float toY = view.getHeight() / 2 - fab.getHeight() / 2 + view.getTop();
 
-        if(isShowingMainView(index)) {
+        if (isShowingMainView(index)) {
             return new CurvedAnimator(fromX, fromY, toX, toY);
-        }else{
+        } else {
             return new CurvedAnimator(toX, toY, fromX, fromY);
         }
     }
 
-    private ObjectAnimator getFABAnimator(int index){
+    private ObjectAnimator getFABAnimator(int index) {
         CurvedAnimator curvedAnimator = getCurvedAnimator(index);
         return ObjectAnimator.ofObject(this, "fabPosition", new CurvedPathEvaluator(), curvedAnimator.getPoints());
     }
 
-    private void expandCircle(final int index){
-        Animator expandAnimator = circularExpandingView.expand();;
+    private void expandCircle(final int index) {
+        Animator expandAnimator = circularExpandingView.expand();
+        ;
         expandAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
@@ -239,10 +309,10 @@ public class FABRevealLayout extends RelativeLayout {
         expandAnimator.start();
     }
 
-    private void startHideAnimationUnusedFAB(final int index){
+    private void startHideAnimationUnusedFAB(final int index) {
         List<AnimatorSet> sets = new ArrayList<>(fabs.size() - 1);
         for (int i = 0; i < fabs.size(); i++) {
-            if(i!=index) {
+            if (i != index) {
                 Animator contractAnimator = circularExpandingView.contract();
                 View disappearingView = fabs.get(i);
                 ObjectAnimator alphaAnimator = ObjectAnimator.ofFloat(disappearingView, "alpha", 1, 0);
@@ -257,10 +327,10 @@ public class FABRevealLayout extends RelativeLayout {
         }
     }
 
-    private void startShowAnimationUnusedFAB(final int index){
+    private void startShowAnimationUnusedFAB(final int index) {
         List<AnimatorSet> sets = new ArrayList<>(fabs.size() - 1);
         for (int i = 0; i < fabs.size(); i++) {
-            if(i!=index) {
+            if (i != index) {
                 Animator contractAnimator = circularExpandingView.contract();
                 View disappearingView = fabs.get(i);
                 ObjectAnimator alphaAnimator = ObjectAnimator.ofFloat(disappearingView, "alpha", 0, 1);
@@ -276,7 +346,7 @@ public class FABRevealLayout extends RelativeLayout {
     }
 
 
-    private void startHideAnimation(final int index){
+    private void startHideAnimation(final int index) {
         Animator contractAnimator = circularExpandingView.contract();
         View disappearingView = getSecondaryView(index);
         ObjectAnimator alphaAnimator = ObjectAnimator.ofFloat(disappearingView, "alpha", 1, 0);
@@ -298,13 +368,13 @@ public class FABRevealLayout extends RelativeLayout {
         set.start();
     }
 
-    public void setFabPosition(Point point){
+    public void setFabPosition(Point point) {
         FloatingActionButton fab = fabs.get(indexAnimated);
         fab.setX(point.x);
         fab.setY(point.y);
     }
 
-    private void moveFABToOriginalLocation(final int index){
+    private void moveFABToOriginalLocation(final int index) {
         ObjectAnimator fabAnimator = getFABAnimator(index);
 
         setupAnimationParams(fabAnimator);
@@ -321,12 +391,12 @@ public class FABRevealLayout extends RelativeLayout {
     }
 
     private void swapViews(int index) {
-        if(isShowingMainView(index)){
+        if (isShowingMainView(index)) {
             getMainView(index).setVisibility(GONE);
             getMainView(index).setAlpha(1);
             getSecondaryView(index).setVisibility(VISIBLE);
             circularExpandingView.setVisibility(VISIBLE);
-        }else{
+        } else {
             getMainView(index).setVisibility(VISIBLE);
             getSecondaryView(index).setVisibility(GONE);
             getSecondaryView(index).setAlpha(1);
@@ -335,31 +405,31 @@ public class FABRevealLayout extends RelativeLayout {
         notifyListener(index);
     }
 
-    private void notifyListener(int index){
-        if(onRevealChangeListener != null){
-            if(isShowingMainView(index)){
+    private void notifyListener(int index) {
+        if (onRevealChangeListener != null) {
+            if (isShowingMainView(index)) {
                 onRevealChangeListener.onMainViewAppeared(this, getMainView(index));
-            }else{
+            } else {
                 onRevealChangeListener.onSecondaryViewAppeared(this, getSecondaryView(index));
             }
         }
     }
 
     private View getSecondaryView(int index) {
-        return childViews.get(2*index + 1);
+        return childViews.get(2 * index + 1);
     }
 
     private View getMainView(int index) {
-        return childViews.get(2*index);
+        return childViews.get(2 * index);
     }
 
-    private int dipsToPixels(float dips){
+    private int dipsToPixels(float dips) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dips, getResources().getDisplayMetrics());
     }
 
     @Override
     public void setLayoutParams(ViewGroup.LayoutParams params) {
-        ((MarginLayoutParams) params).topMargin -= dipsToPixels(FAB_SIZE);
+        ((MarginLayoutParams) params).topMargin -= dipsToPixels(fabMaxSize);
         super.setLayoutParams(params);
     }
 
